@@ -74,14 +74,6 @@
                     "storage": [
                       {
                         "key": {
-                          "symbol": "BALANCE"
-                        },
-                        "val": {
-                          "i128": "1000000000"
-                        }
-                      },
-                      {
-                        "key": {
                           "symbol": "NAME"
                         },
                         "val": {
@@ -99,6 +91,21 @@
                       {
                         "key": {
                           "symbol": "TOTAL"
+                        },
+                        "val": {
+                          "i128": "1000000000"
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "BALANCE"
+                            },
+                            {
+                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                            }
+                          ]
                         },
                         "val": {
                           "i128": "1000000000"

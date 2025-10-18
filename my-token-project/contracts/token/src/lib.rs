@@ -6,6 +6,7 @@ const BALANCE: soroban_sdk::Symbol = symbol_short!("BALANCE");
 const NAME: soroban_sdk::Symbol = symbol_short!("NAME");
 const SYMBOL: soroban_sdk::Symbol = symbol_short!("SYMBOL");
 const TOTAL: soroban_sdk::Symbol = symbol_short!("TOTAL");
+const ALLOWANCE: soroban_sdk::Symbol = symbol_short!("ALLOWANCE");
 
 // Contract struct
 #[contract]
@@ -44,8 +45,10 @@ impl TokenContract {
         env.storage().instance().set(&SYMBOL, &symbol);
         env.storage().instance().set(&TOTAL, &total_supply);
 
-        // Set balance admin = total supply
-        env.storage().instance().set(&BALANCE, &total_supply);
+        // Set balance admin = total supply (per-address storage)
+        env.storage()
+            .instance()
+            .set(&(&BALANCE, admin.clone()), &total_supply);
     }
 
     // Get nama token
@@ -63,9 +66,12 @@ impl TokenContract {
         env.storage().instance().get(&TOTAL).unwrap()
     }
 
-    // Get balance
-    pub fn get_balance(env: Env) -> i128 {
-        env.storage().instance().get(&BALANCE).unwrap_or(0)
+    // Get balance for an address
+    pub fn get_balance(env: Env, addr: Address) -> i128 {
+        env.storage()
+            .instance()
+            .get(&(&BALANCE, addr))
+            .unwrap_or(0)
     }
 
     // Transfer token (simplified - real token contract lebih kompleks)
@@ -78,17 +84,120 @@ impl TokenContract {
             panic!("Amount harus lebih dari 0");
         }
 
-        // Get current balances (simplified)
-        let balance: i128 = env.storage().instance().get(&BALANCE).unwrap_or(0);
+        // Get balances
+    let from_balance: i128 = env.storage().instance().get(&(&BALANCE, from.clone())).unwrap_or(0);
+    let to_balance: i128 = env.storage().instance().get(&(&BALANCE, to.clone())).unwrap_or(0);
 
         // Check sufficient balance
-        if balance < amount {
+        if from_balance < amount {
             panic!("Balance tidak cukup");
         }
 
-        // Update balance (simplified version)
-        let new_balance = balance - amount;
-        env.storage().instance().set(&BALANCE, &new_balance);
+        // Update balances
+        env.storage()
+            .instance()
+            .set(&(&BALANCE, from), &(from_balance - amount));
+        env.storage()
+            .instance()
+            .set(&(&BALANCE, to), &(to_balance + amount));
+    }
+
+    // Mint new tokens to an address. Only callable by admin (caller must authorize).
+    pub fn mint(env: Env, admin: Address, to: Address, amount: i128) {
+        admin.require_auth();
+
+        if amount <= 0 {
+            panic!("Amount harus lebih dari 0");
+        }
+
+        // increase total supply
+        let total: i128 = env.storage().instance().get(&TOTAL).unwrap_or(0);
+        let new_total = total.checked_add(amount).expect("Total overflow");
+        env.storage().instance().set(&TOTAL, &new_total);
+
+        // increase recipient balance
+        let bal: i128 = env.storage().instance().get(&(&BALANCE, to.clone())).unwrap_or(0);
+        env.storage()
+            .instance()
+            .set(&(&BALANCE, to), &(bal + amount));
+    }
+
+    // Burn tokens from caller's address
+    pub fn burn(env: Env, owner: Address, amount: i128) {
+        owner.require_auth();
+
+        if amount <= 0 {
+            panic!("Amount harus lebih dari 0");
+        }
+
+    let bal: i128 = env.storage().instance().get(&(&BALANCE, owner.clone())).unwrap_or(0);
+        if bal < amount {
+            panic!("Balance tidak cukup untuk burn");
+        }
+
+        env.storage()
+            .instance()
+            .set(&(&BALANCE, owner.clone()), &(bal - amount));
+
+        // decrease total supply
+        let total: i128 = env.storage().instance().get(&TOTAL).unwrap_or(0);
+        env.storage().instance().set(&TOTAL, &(total - amount));
+    }
+
+    // Approve spender to spend owner's tokens
+    pub fn approve(env: Env, owner: Address, spender: Address, amount: i128) {
+        owner.require_auth();
+
+        if amount < 0 {
+            panic!("Amount tidak boleh negatif");
+        }
+
+        env.storage()
+            .instance()
+            .set(&(&ALLOWANCE, owner.clone(), spender.clone()), &amount);
+    }
+
+    // Get allowance
+    pub fn allowance(env: Env, owner: Address, spender: Address) -> i128 {
+        env.storage()
+            .instance()
+            .get(&(&ALLOWANCE, owner, spender))
+            .unwrap_or(0)
+    }
+
+    // Transfer from owner's account by approved spender
+    pub fn transfer_from(env: Env, spender: Address, owner: Address, to: Address, amount: i128) {
+        spender.require_auth();
+
+        if amount <= 0 {
+            panic!("Amount harus lebih dari 0");
+        }
+
+    let mut allowed: i128 = env.storage().instance().get(&(&ALLOWANCE, owner.clone(), spender.clone())).unwrap_or(0);
+        if allowed < amount {
+            panic!("Allowance tidak cukup");
+        }
+
+        // Deduct allowance
+        allowed = allowed - amount;
+        env.storage()
+            .instance()
+            .set(&(&ALLOWANCE, owner.clone(), spender.clone()), &allowed);
+
+        // Move funds
+    let owner_bal: i128 = env.storage().instance().get(&(&BALANCE, owner.clone())).unwrap_or(0);
+        if owner_bal < amount {
+            panic!("Balance owner tidak cukup");
+        }
+
+    let to_bal: i128 = env.storage().instance().get(&(&BALANCE, to.clone())).unwrap_or(0);
+
+        env.storage()
+            .instance()
+            .set(&(&BALANCE, owner), &(owner_bal - amount));
+        env.storage()
+            .instance()
+            .set(&(&BALANCE, to), &(to_bal + amount));
     }
 }
 

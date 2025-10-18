@@ -27,7 +27,7 @@ fn test_initialize_token() {
     assert_eq!(client.get_name(), name);
     assert_eq!(client.get_symbol(), symbol);
     assert_eq!(client.get_total_supply(), supply);
-    assert_eq!(client.get_balance(), supply);
+    assert_eq!(client.get_balance(&admin), supply);
 }
 
 #[test]
@@ -91,5 +91,49 @@ fn test_transfer() {
     client.transfer(&admin, &user, &transfer_amount);
 
     // Balance should be reduced
-    assert_eq!(client.get_balance(), supply - transfer_amount);
+    assert_eq!(client.get_balance(&admin), supply - transfer_amount);
+    assert_eq!(client.get_balance(&user), transfer_amount);
+}
+
+#[test]
+fn test_mint_burn_and_allowance() {
+    let env = Env::default();
+    let contract_id = env.register(TokenContract, ());
+    let client = TokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+
+    env.mock_all_auths();
+
+    let name = String::from_str(&env, "Test Token");
+    let symbol = String::from_str(&env, "TST");
+    let supply = 1_000_000i128;
+
+    client.initialize(&admin, &name, &symbol, &supply);
+
+    // Mint to Alice
+    let mint_amount = 10_000i128;
+    client.mint(&admin, &alice, &mint_amount);
+    assert_eq!(client.get_balance(&alice), mint_amount);
+    assert_eq!(client.get_total_supply(), supply + mint_amount);
+
+    // Alice approves Bob
+    let approve_amount = 5_000i128;
+    client.approve(&alice, &bob, &approve_amount);
+    assert_eq!(client.allowance(&alice, &bob), approve_amount);
+
+    // Bob transfers from Alice to admin
+    let transfer_from_amount = 3_000i128;
+    client.transfer_from(&bob, &alice, &admin, &transfer_from_amount);
+    assert_eq!(client.get_balance(&alice), mint_amount - transfer_from_amount);
+    assert_eq!(client.get_balance(&admin), supply + transfer_from_amount);
+    assert_eq!(client.allowance(&alice, &bob), approve_amount - transfer_from_amount);
+
+    // Burn some admin tokens
+    let burn_amount = 1_000i128;
+    client.burn(&admin, &burn_amount);
+    assert_eq!(client.get_total_supply(), supply + mint_amount - burn_amount);
+    assert_eq!(client.get_balance(&admin), supply + transfer_from_amount - burn_amount);
 }
